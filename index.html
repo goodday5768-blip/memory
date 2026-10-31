@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>추억지도</title>
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#2e4a86">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="추억지도">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+<style>
+/* 한 화면 앱: 큰 화면은 왼쪽 기록장 + 오른쪽 거리 지도, 휴대폰은 위 지도 + 아래 기록장 */
+:root{
+  --bg:#f6f7f8; --panel:#ffffff; --fg:#1c2330; --mut:#677184; --faint:#e7eaef; --chip:#eef1f5; --line-strong:#a3afbb;
+  --accent:#2e4a86; --accent-ink:#ffffff; --tile-filter:none; --err:#c0392b;
+  --k-play:#e8590c; --k-mus:#6f47e0; --k-nat:#2b8a3e; --k-cafe:#c2255c; --k-food:#1c6fc0; --k-stay:#55606b; --k-shop:#e08a00; --k-jp:#0c8599;
+  --f-display:"Gowun Batang","AppleMyungjo","Batang",serif;
+  --f-body:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f141c; --panel:#141b25; --fg:#e6eaf0; --mut:#98a3b3; --faint:#232d3a; --chip:#1d2632; --line-strong:#3e4c5d;
+  --accent:#9db4ee; --accent-ink:#0f141c; --tile-filter:invert(1) hue-rotate(180deg) brightness(.82) contrast(.9) saturate(.7); --err:#ff8a7a;
+  --k-play:#ff8f45; --k-mus:#a08bff; --k-nat:#5ccf72; --k-cafe:#f36c9b; --k-food:#5eb0f5; --k-stay:#b5bec8; --k-shop:#ffb347; --k-jp:#3cc8d8;
+  color-scheme:dark}}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14px;line-height:1.5;overflow:hidden;
+  padding-top:env(safe-area-inset-top,0px);box-sizing:border-box}
+*{box-sizing:border-box}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+[hidden]{display:none!important}
+/* 잠금 화면 */
+#lock{position:fixed;inset:0;z-index:2000;background:var(--bg);display:grid;place-items:center;
+  padding:max(24px,env(safe-area-inset-top,0px)) max(20px,env(safe-area-inset-right,0px)) max(24px,env(safe-area-inset-bottom,0px)) max(20px,env(safe-area-inset-left,0px))}
+#lock form{width:min(360px,100%);display:grid;gap:12px}
+#lock h1{font-family:var(--f-display);font-size:34px;margin:0}
+#lock p{margin:0;color:var(--mut)}
+#lock input[type=password]{padding:12px 14px;border:1px solid var(--faint);border-radius:12px;background:var(--panel);font-size:16px}
+#lock label{display:flex;gap:8px;align-items:center;color:var(--mut);font-size:13px}
+#lock button{padding:12px;border:0;border-radius:12px;background:var(--accent);color:var(--accent-ink);font-weight:600;font-size:15px;cursor:pointer}
+#lock button[disabled]{opacity:.6}
+#lock .err{color:var(--err);font-size:13px;min-height:1.2em}
+/* 앱 */
+#app{height:100%;display:grid;grid-template-columns:380px minmax(0,1fr);grid-template-rows:100%}
+#panel{background:var(--panel);border-right:1px solid var(--faint);display:flex;flex-direction:column;min-height:0;min-width:0}
+.ph{padding-block:16px 10px;padding-left:max(18px,env(safe-area-inset-left,0px));padding-right:18px;border-bottom:1px solid var(--faint);display:grid;gap:10px}
+.brand{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.brand h1{font-family:var(--f-display);font-weight:700;font-size:26px;letter-spacing:-.01em;margin:0}
+.brand button{border:0;background:none;color:var(--mut);font-size:12px;cursor:pointer;padding:4px}
+#stat{color:var(--mut);font-size:12.5px;font-variant-numeric:tabular-nums;margin:0}
+.tabs{display:flex;gap:4px;background:var(--chip);border-radius:10px;padding:3px}
+.tabs button{flex:1;border:0;background:transparent;padding:7px 4px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;color:var(--mut)}
+.tabs button[aria-selected="true"]{background:var(--panel);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.yr{display:flex;gap:8px;align-items:center}
+.yr select{flex:1;padding:7px 10px;border:1px solid var(--faint);border-radius:8px;background:var(--panel);font-size:13px}
+.yr .clear{border:0;background:none;color:var(--accent);cursor:pointer;font-size:12.5px;padding:4px}
+#body{overflow:auto;flex:1;min-height:0;padding-block:6px calc(24px + env(safe-area-inset-bottom,0px));padding-left:max(18px,env(safe-area-inset-left,0px));padding-right:18px;-webkit-overflow-scrolling:touch}
+.sec{font-size:11.5px;letter-spacing:.06em;color:var(--mut);margin:14px 0 6px;font-weight:600}
+.empty{color:var(--mut);padding:14px 0;font-size:13px;margin:0}
+.ago{display:grid;gap:8px;margin-bottom:6px}
+.memo{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 12px;padding:11px 12px;border:1px solid var(--faint);border-radius:12px;cursor:pointer;background:var(--panel);text-align:left;width:100%}
+.memo:hover{border-color:var(--line-strong)}
+.memo .when{grid-row:span 2;display:grid;place-items:center;min-width:52px;border-right:1px solid var(--faint);padding-right:12px}
+.memo .when b{font-family:var(--f-display);font-size:20px;line-height:1}
+.memo .when small{color:var(--mut);font-size:11px}
+.memo .pn{font-weight:600;display:flex;gap:6px;align-items:center;min-width:0}
+.memo .pn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.memo .tt{color:var(--mut);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dot{width:9px;height:9px;border-radius:50%;flex:none;display:inline-block}
+.search{width:100%;padding:8px 11px;border:1px solid var(--faint);border-radius:9px;background:var(--panel);font-size:16px;margin-top:10px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--faint);background:var(--chip);border-radius:999px;padding:4px 10px 4px 8px;font-size:12px;cursor:pointer}
+.chip[aria-pressed="false"]{background:transparent;color:var(--mut);opacity:.7}
+.chip[aria-pressed="false"] .dot{background:transparent!important;box-shadow:inset 0 0 0 1.5px var(--line-strong)}
+.chip small{color:var(--mut);font-variant-numeric:tabular-nums}
+.rows{display:grid}
+.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 2px;border:0;border-bottom:1px solid var(--faint);background:none;text-align:left;cursor:pointer;width:100%}
+.row:hover .nm{color:var(--accent)}
+.row .nm{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .sub{color:var(--mut);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .ct{font-variant-numeric:tabular-nums;color:var(--mut);font-size:12.5px}
+.row .ct b{color:var(--fg);font-weight:600}
+.bars{display:grid;gap:3px;margin-top:6px}
+.bar{display:grid;grid-template-columns:44px minmax(0,1fr) 40px;gap:8px;align-items:center;border:0;background:none;padding:3px 2px;cursor:pointer;border-radius:6px;font-variant-numeric:tabular-nums}
+.bar:hover,.bar[aria-pressed="true"]{background:var(--chip)}
+.bar .y{font-size:12.5px;color:var(--mut);text-align:left}
+.bar[aria-pressed="true"] .y{color:var(--fg);font-weight:600}
+.bar .track{height:12px;border-radius:3px;background:var(--faint);overflow:hidden}
+.bar .fill{height:100%;background:var(--accent);border-radius:3px;display:block}
+.bar .n{font-size:12px;text-align:right}
+.month{display:grid;grid-template-columns:38px minmax(0,1fr);gap:10px;padding:8px 0;border-bottom:1px solid var(--faint)}
+.month>b{font-family:var(--f-display);font-size:16px}
+.month .ps{display:flex;flex-wrap:wrap;gap:4px 6px}
+.month .ps button{border:0;background:var(--chip);border-radius:6px;padding:2px 8px;font-size:12.5px;cursor:pointer;display:inline-flex;gap:5px;align-items:center}
+.back{border:0;background:none;color:var(--accent);cursor:pointer;padding:10px 0 4px;font-size:13px}
+.det h2{font-family:var(--f-display);font-size:24px;margin:4px 0 2px;line-height:1.25;text-wrap:balance}
+.det .meta{color:var(--mut);font-size:12.5px}
+.facts{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
+.facts span{background:var(--chip);border-radius:8px;padding:4px 9px;font-size:12.5px;font-variant-numeric:tabular-nums}
+.facts b{font-weight:600}
+.note{font-size:12px;color:var(--mut);border-left:2px solid var(--line-strong);padding:2px 0 2px 9px;margin:8px 0}
+.kakao{display:inline-block;margin:6px 0 2px;color:var(--accent);font-size:13px;font-weight:500;text-decoration:none}
+.kakao:hover{text-decoration:underline}
+.tl h3{font-family:var(--f-display);font-size:17px;margin:16px 0 4px}
+.tl ul{list-style:none;margin:0;padding:0}
+.tl li{display:grid;grid-template-columns:78px minmax(0,1fr);gap:8px;padding:5px 0;border-bottom:1px dashed var(--faint);font-size:13px}
+.tl time{color:var(--mut);font-variant-numeric:tabular-nums;font-size:12.5px}
+#mapwrap{position:relative;min-width:0;min-height:0}
+#map{position:absolute;inset:0;background:var(--chip)}
+.leaflet-container{font-family:var(--f-body)}
+.leaflet-tile-pane{filter:var(--tile-filter)}
+.leaflet-control-attribution{font-size:10px}
+.leaflet-top.leaflet-right{margin-right:env(safe-area-inset-right,0px)}
+.clu{display:grid;place-items:center}
+.clu span{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-weight:600;font-size:12.5px;box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 25%,transparent);font-variant-numeric:tabular-nums}
+.views{position:absolute;z-index:500;left:calc(12px + env(safe-area-inset-left,0px));top:12px;display:flex;gap:6px}
+.views button{border:1px solid var(--faint);background:var(--panel);border-radius:8px;padding:5px 10px;font-size:12.5px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+@media (max-width:760px){
+  #app{grid-template-columns:100%;grid-template-rows:minmax(0,1fr) 50%}
+  #mapwrap{grid-row:1}
+  #panel{grid-row:2;border-right:0;border-top:1px solid var(--faint);border-radius:16px 16px 0 0;box-shadow:0 -6px 18px rgba(0,0,0,.08)}
+  .ph{padding-block:12px 8px;padding-right:max(16px,env(safe-area-inset-right,0px));padding-left:max(16px,env(safe-area-inset-left,0px))}
+  #body{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+  .brand h1{font-size:21px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div id="lock">
+  <form id="lockform" autocomplete="on">
+    <h1>추억지도</h1>
+    <p>함께 다녀온 곳들의 기록입니다. 비밀번호를 넣어 주세요.</p>
+    <input type="text" name="username" value="chueok" autocomplete="username" hidden>
+    <input id="pw" type="password" autocomplete="current-password" placeholder="비밀번호" required>
+    <label><input id="remember" type="checkbox" checked> 이 기기에서 기억하기</label>
+    <button id="unlock" type="submit">열기</button>
+    <div class="err" id="err" role="alert"></div>
+  </form>
+</div>
+<div id="app" hidden>
+  <aside id="panel" aria-label="기록">
+    <header class="ph">
+      <div class="brand"><h1>추억지도</h1><button id="lockbtn" type="button">잠그기</button></div>
+      <p id="stat"></p>
+      <div class="tabs" role="tablist">
+        <button role="tab" data-tab="today" aria-selected="true">오늘의 추억</button>
+        <button role="tab" data-tab="places" aria-selected="false">장소</button>
+        <button role="tab" data-tab="years" aria-selected="false">연도</button>
+      </div>
+      <div class="yr"><select id="year" aria-label="연도 고르기"><option value="">모든 해</option></select><button class="clear" id="yclear" type="button" hidden>전체 보기</button></div>
+    </header>
+    <div id="body"></div>
+  </aside>
+  <div id="mapwrap">
+    <div id="map" role="region" aria-label="지도"></div>
+    <div class="views"><button id="v-jj" type="button">전주</button><button id="v-kr" type="button">전국</button><button id="v-jp" type="button">일본</button></div>
+  </div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script>
+(function(){
+const $=s=>document.querySelector(s);
+const KEY='chueok.k';
+const b64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+const tob64=u=>btoa(String.fromCharCode(...u));
+const store={get(){try{return localStorage.getItem(KEY)}catch(e){return null}},set(v){try{localStorage.setItem(KEY,v)}catch(e){}},del(){try{localStorage.removeItem(KEY)}catch(e){}}};
+const getJSON=u=>fetch(u+'?t='+Date.now(),{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error(u);return r.json()});
+async function unwrap(pw,lock){
+  const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveKey']);
+  const kek=await crypto.subtle.deriveKey({name:'PBKDF2',salt:b64(lock.salt),iterations:lock.iter,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['decrypt']);
+  return new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:b64(lock.iv)},kek,b64(lock.wk)));
+}
+async function openData(raw,enc){
+  const k=await crypto.subtle.importKey('raw',raw,'AES-GCM',false,['decrypt']);
+  return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:b64(enc.iv)},k,b64(enc.ct))));
+}
+const encP=getJSON('data.json'),lockP=getJSON('lock.json');
+async function tryStored(){
+  const s=store.get();if(!s)return;
+  try{start(await openData(b64(s),await encP))}catch(e){store.del()}
+}
+$('#lockform').addEventListener('submit',async e=>{
+  e.preventDefault();const btn=$('#unlock');btn.disabled=true;btn.textContent='여는 중…';$('#err').textContent='';
+  try{
+    const raw=await unwrap($('#pw').value,await lockP);
+    const data=await openData(raw,await encP);
+    if($('#remember').checked)store.set(tob64(raw));
+    start(data);
+  }catch(err){
+    $('#err').textContent=(err&&err.name==='OperationError')?'비밀번호가 맞지 않아요. 다시 넣어 주세요.':'기록을 불러오지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.';
+    btn.disabled=false;btn.textContent='열기';$('#pw').select();
+  }
+});
+$('#lockbtn').onclick=()=>{store.del();location.reload()};
+tryStored();
+
+let started=false;
+function start(data){
+if(started)return;started=true;
+$('#lock').hidden=true;$('#app').hidden=false;
+const P=data.places;
+const KINDS=[['식당','--k-food'],['카페·빵집','--k-cafe'],['자연·명소','--k-nat'],['체험·놀이','--k-play'],['박물관·문화','--k-mus'],['숙소','--k-stay'],['쇼핑','--k-shop'],['일본 여행','--k-jp']];
+const KV=Object.fromEntries(KINDS);
+const WD='일월화수목금토';
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const kc=k=>css(KV[k]||'--k-stay');
+const st={tab:'today',yr:'',off:new Set(),q:'',sel:null};
+try{const t=localStorage.getItem('chueok.tab');if(t)st.tab=t}catch(e){}
+P.forEach((p,i)=>{p.i=i});
+const years=[...new Set(P.flatMap(p=>p.v.map(v=>v[0].slice(0,4))))].sort();
+const vis=p=>st.yr?p.v.filter(v=>v[0].startsWith(st.yr)):p.v;
+const shown=()=>P.filter(p=>!st.off.has(p.k)&&vis(p).length);
+const area=a=>{const s=a.split(' ');return s[0]==='일본'?'일본':(s[1]||'')+(s[2]&&/[구군]$/.test(s[2])?' '+s[2]:'')};
+const fmt=d=>{const [y,m,dd]=d.split('-').map(Number);return `${m}.${dd} (${WD[new Date(y,m-1,dd).getDay()]})`};
+
+const map=L.map('map',{zoomControl:false,minZoom:5,maxZoom:19,zoomSnap:.5});
+L.control.zoom({position:'topright'}).addTo(map);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> 기여자'}).addTo(map);
+const cl=L.markerClusterGroup({maxClusterRadius:36,showCoverageOnHover:false,spiderfyDistanceMultiplier:1.4,
+  iconCreateFunction:c=>L.divIcon({html:`<span>${c.getChildCount()}</span>`,className:'clu',iconSize:[34,34]})}).addTo(map);
+let markers=[],selM=null;
+function drawMarkers(){
+  cl.clearLayers();markers=[];
+  shown().forEach(p=>{const n=vis(p).length;
+    const m=L.circleMarker([p.lat,p.lng],{radius:5.5+Math.min(9,1.8*Math.sqrt(n)),weight:1.5,fillOpacity:.95,fillColor:kc(p.k),color:'#ffffff'});
+    m.p=p;m.on('click',()=>openPlace(p,false));markers.push(m)});
+  cl.addLayers(markers);
+}
+function paint(){markers.forEach(m=>m.setStyle({fillColor:kc(m.p.k)}));if(selM)selM.setStyle({color:css('--fg')})}
+function highlight(p){
+  if(selM){map.removeLayer(selM);selM=null}
+  if(p)selM=L.circleMarker([p.lat,p.lng],{radius:16,weight:2.5,fill:false,color:css('--fg'),interactive:false}).addTo(map);
+}
+const views={jj:[[35.77,127.03],[35.90,127.21]],kr:[[33.1,124.8],[38.6,130.2]],jp:[[33.3,130.2],[34.9,135.8]]};
+$('#v-jj').onclick=()=>map.fitBounds(views.jj);
+$('#v-kr').onclick=()=>map.fitBounds(views.kr);
+$('#v-jp').onclick=()=>map.fitBounds(views.jp);
+if(!P.some(p=>p.k==='일본 여행'))$('#v-jp').hidden=true;
+
+const body=$('#body');
+function stat(){
+  const s=shown(),n=s.reduce((a,p)=>a+vis(p).length,0);
+  $('#stat').textContent=`${s.length.toLocaleString()}곳 · ${n.toLocaleString()}번의 나들이 · `+(st.yr?`${st.yr}년`:`${years[0]}–${years[years.length-1]}`)+(data.updated?` · ${data.updated} 업데이트`:'');
+}
+function tabs(){document.querySelectorAll('.tabs button').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.tab===st.tab&&!st.sel)))}
+function render(){
+  tabs();stat();$('#yclear').hidden=!st.yr;$('#year').value=st.yr;
+  if(st.sel)return renderPlace(st.sel);
+  ({today:renderToday,places:renderPlaces,years:renderYears})[st.tab]();
+}
+function memoBtn(p,v,top,bottom){
+  return `<button class="memo" data-i="${p.i}"><span class="when"><b>${top}</b><small>${bottom}</small></span>`+
+    `<span class="pn"><i class="dot" style="background:${kc(p.k)}"></i><span>${esc(p.n)}</span></span><span class="tt">${esc(v[0])} · ${esc(v[1])}</span></button>`;
+}
+function renderToday(){
+  const now=new Date(),Y=now.getFullYear(),today=new Date(Y,now.getMonth(),now.getDate()),items=[];
+  P.forEach(p=>{if(st.off.has(p.k))return;p.v.forEach(v=>{const [y,m,d]=v[0].split('-').map(Number);if(y>=Y)return;
+    const diff=Math.round((new Date(Y,m-1,d)-today)/864e5);if(Math.abs(diff)<=3)items.push({p,v,ago:Y-y,diff})})});
+  items.sort((a,b)=>a.ago-b.ago||a.diff-b.diff);
+  let h=`<div class="sec">${now.getMonth()+1}월 ${now.getDate()}일 앞뒤 사흘, 지난 해의 오늘</div>`;
+  if(items.length){h+=`<div class="ago">${items.map(x=>memoBtn(x.p,x.v,x.ago,'년 전')).join('')}</div>`}
+  else{
+    const mo=String(now.getMonth()+1).padStart(2,'0'),alt=[];
+    P.forEach(p=>{if(st.off.has(p.k))return;p.v.forEach(v=>{if(v[0].slice(5,7)===mo&&+v[0].slice(0,4)<Y)alt.push({p,v,ago:Y-+v[0].slice(0,4)})})});
+    alt.sort((a,b)=>a.ago-b.ago||a.v[0].localeCompare(b.v[0]));
+    h+=`<p class="empty">이맘때 다녀온 기록은 없어요. 대신 지난 해 ${now.getMonth()+1}월의 나들이입니다.</p><div class="ago">${alt.slice(0,40).map(x=>memoBtn(x.p,x.v,x.ago,'년 전')).join('')}</div>`;
+  }
+  const recent=P.flatMap(p=>st.off.has(p.k)?[]:p.v.map(v=>({p,v}))).sort((a,b)=>b.v[0].localeCompare(a.v[0])).slice(0,8);
+  h+=`<div class="sec">최근 나들이</div><div class="ago">${recent.map(x=>{const [y,m,d]=x.v[0].split('-');return memoBtn(x.p,x.v,`${+m}.${+d}`,y)}).join('')}</div>`;
+  body.innerHTML=h;
+}
+function chipsHtml(){
+  const cnt={};P.forEach(p=>{if(vis(p).length)cnt[p.k]=(cnt[p.k]||0)+1});
+  return `<div class="chips">${KINDS.filter(([k])=>cnt[k]).map(([k])=>`<button class="chip" data-k="${k}" aria-pressed="${!st.off.has(k)}"><i class="dot" style="background:${kc(k)}"></i>${k}<small>${cnt[k]}</small></button>`).join('')}</div>`;
+}
+function renderPlaces(){
+  const q=st.q.trim().toLowerCase();
+  const list=shown().filter(p=>!q||p.n.toLowerCase().includes(q)||p.a.toLowerCase().includes(q)).sort((a,b)=>vis(b).length-vis(a).length||a.n.localeCompare(b.n));
+  body.innerHTML=`<input class="search" id="q" type="search" placeholder="장소나 동네 이름" value="${esc(st.q)}">`+chipsHtml()+
+    `<div class="sec">${list.length}곳 · 많이 간 순</div><div class="rows">`+
+    list.map(p=>`<button class="row" data-i="${p.i}"><i class="dot" style="background:${kc(p.k)}"></i><span style="min-width:0"><div class="nm">${esc(p.n)}</div><div class="sub">${esc(p.c)} · ${esc(area(p.a))}</div></span><span class="ct"><b>${vis(p).length}</b>번</span></button>`).join('')+
+    (list.length?'':`<p class="empty">찾는 장소가 없어요. 이름 일부만 넣어 보세요.</p>`)+`</div>`;
+  const qi=$('#q');qi.oninput=e=>{st.q=e.target.value;const pos=qi.selectionStart;renderPlaces();const n=$('#q');n.focus();n.setSelectionRange(pos,pos)};
+}
+function renderYears(){
+  const per=years.map(y=>[y,P.reduce((a,p)=>a+(st.off.has(p.k)?0:p.v.filter(v=>v[0].startsWith(y)).length),0)]);
+  const mx=Math.max(1,...per.map(x=>x[1]));
+  let h=chipsHtml()+`<div class="sec">해마다 다녀온 횟수 · 막대를 누르면 그해만 봅니다</div><div class="bars">`+
+    per.map(([y,n])=>`<button class="bar" data-y="${y}" aria-pressed="${st.yr===y}"><span class="y">${y}</span><span class="track"><span class="fill" style="width:${(n/mx*100).toFixed(1)}%"></span></span><span class="n">${n}</span></button>`).join('')+`</div>`;
+  if(st.yr){
+    const by={};shown().forEach(p=>vis(p).forEach(v=>{const m=+v[0].slice(5,7);(by[m]=by[m]||new Map()).set(p.i,p)}));
+    h+=`<div class="sec">${st.yr}년, 달마다</div>`+Object.keys(by).map(Number).sort((a,b)=>a-b).map(m=>`<div class="month"><b>${m}월</b><div class="ps">${[...by[m].values()].map(p=>`<button data-i="${p.i}"><i class="dot" style="background:${kc(p.k)}"></i>${esc(p.n)}</button>`).join('')}</div></div>`).join('');
+  }
+  body.innerHTML=h;
+}
+function renderPlace(p){
+  const vs=p.v,by={};vs.forEach(v=>(by[v[0].slice(0,4)]=by[v[0].slice(0,4)]||[]).push(v));
+  body.innerHTML=`<div class="det"><button class="back" id="back" type="button">← 목록으로</button>`+
+    `<h2>${esc(p.n)}</h2><div class="meta"><i class="dot" style="background:${kc(p.k)}"></i> ${esc(p.k)} · ${esc(p.c)}<br>${esc(p.a)}</div>`+
+    `<div class="facts"><span><b>${vs.length}</b>번 다녀옴</span><span>처음 ${vs[0][0]}</span>${vs.length>1?`<span>마지막 ${vs[vs.length-1][0]}</span>`:''}</div>`+
+    (p.g&&p.g.length?`<p class="note">일정에는 「${p.g.map(esc).join('」, 「')}」로만 적혀 있어 전주에서 가장 가까운 지점으로 표시했어요.</p>`:'')+
+    (p.k==='일본 여행'?`<p class="note">일본 장소는 대략적인 위치예요.</p>`:'')+
+    (p.u?`<a class="kakao" href="${esc(p.u)}" target="_blank" rel="noopener">카카오맵에서 보기 ↗</a>`:'')+
+    `<div class="tl">${Object.keys(by).sort().reverse().map(y=>`<h3>${y}</h3><ul>${by[y].slice().reverse().map(v=>`<li><time>${fmt(v[0])}</time><span>${esc(v[1])}</span></li>`).join('')}</ul>`).join('')}</div></div>`;
+  $('#back').onclick=()=>{st.sel=null;highlight(null);render()};
+  body.scrollTop=0;
+}
+function openPlace(p,fly){st.sel=p;render();highlight(p);if(fly)map.setView([p.lat,p.lng],Math.max(map.getZoom(),15))}
+body.addEventListener('click',e=>{
+  const t=e.target.closest('[data-i],[data-k],[data-y]');if(!t)return;
+  if(t.dataset.i!==undefined)return openPlace(P[+t.dataset.i],true);
+  if(t.dataset.k){const k=t.dataset.k;st.off.has(k)?st.off.delete(k):st.off.add(k);drawMarkers();render();return}
+  if(t.dataset.y){st.yr=st.yr===t.dataset.y?'':t.dataset.y;drawMarkers();render()}
+});
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{st.tab=b.dataset.tab;st.sel=null;highlight(null);try{localStorage.setItem('chueok.tab',st.tab)}catch(e){};render();body.scrollTop=0});
+const ysel=$('#year');years.slice().reverse().forEach(y=>ysel.add(new Option(y+'년',y)));
+ysel.onchange=()=>{st.yr=ysel.value;drawMarkers();render()};
+$('#yclear').onclick=()=>{st.yr='';drawMarkers();render()};
+drawMarkers();render();
+requestAnimationFrame(()=>{map.invalidateSize();map.fitBounds(views.jj)});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{paint();render()});
+new ResizeObserver(()=>map.invalidateSize()).observe($('#mapwrap'));
+}
+})();
+</script>
+</body>
+</html>
