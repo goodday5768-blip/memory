@@ -117,6 +117,16 @@ button,input,select{font:inherit;color:inherit}
 .leaflet-top.leaflet-right{margin-right:env(safe-area-inset-right,0px)}
 .clu{display:grid;place-items:center}
 .clu span{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-weight:600;font-size:12.5px;box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 25%,transparent);font-variant-numeric:tabular-nums}
+.leaflet-tooltip.tip{background:var(--panel);color:var(--fg);border:1px solid var(--faint);border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.18);padding:8px 11px;white-space:normal;width:240px;font-family:var(--f-body);font-size:12.5px;line-height:1.45}
+.leaflet-tooltip-top.tip:before{border-top-color:var(--panel)}
+.tip b{display:block;font-family:var(--f-display);font-size:15px;line-height:1.3;margin-bottom:1px}
+.tip .k{color:var(--mut);font-size:11.5px}
+.tip .n{margin:4px 0 2px;font-weight:600}
+.tip ul{list-style:none;margin:0;padding:0;color:var(--mut);font-size:11.5px}
+.tip li{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tip li time{font-variant-numeric:tabular-nums;color:var(--fg);margin-right:5px}
+.pl{position:absolute;left:11px;top:0;transform:translateY(-50%);white-space:nowrap;font-size:11.5px;font-weight:600;color:var(--fg);pointer-events:none;
+  text-shadow:0 0 3px var(--panel),0 0 3px var(--panel),0 0 2px var(--panel)}
 .views{position:absolute;z-index:500;left:calc(12px + env(safe-area-inset-left,0px));top:12px;display:flex;gap:6px}
 .views button{border:1px solid var(--faint);background:var(--panel);border-radius:8px;padding:5px 10px;font-size:12.5px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.12)}
 @media (max-width:760px){
@@ -249,16 +259,32 @@ const fmt=d=>{const [y,m,dd]=d.split('-').map(Number);return `${m}.${dd} (${WD[n
 const map=L.map('map',{zoomControl:false,minZoom:5,maxZoom:19,zoomSnap:.5});
 L.control.zoom({position:'topright'}).addTo(map);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> 기여자'}).addTo(map);
-const cl=L.markerClusterGroup({maxClusterRadius:36,showCoverageOnHover:false,spiderfyDistanceMultiplier:1.4,
+const LABEL_Z=15;   // 이만큼 확대하면 묶음이 풀리고 상호명이 보임
+const cl=L.markerClusterGroup({maxClusterRadius:36,showCoverageOnHover:false,spiderfyDistanceMultiplier:1.4,disableClusteringAtZoom:LABEL_Z,
   iconCreateFunction:c=>L.divIcon({html:`<span>${c.getChildCount()}</span>`,className:'clu',iconSize:[34,34]})}).addTo(map);
 let markers=[],selM=null;
+const labels=L.layerGroup();
+const ymd=d=>d.replace(/-/g,'.');
+function tipHtml(p){
+  const vs=vis(p),n=vs.length,y0=vs[0][0].slice(0,4),y1=vs[n-1][0].slice(0,4);
+  const recent=vs.slice(-3).reverse().map(v=>`<li><time>${ymd(v[0])} ${'일월화수목금토'[new Date(v[0]).getDay()]}</time>${esc(v[1])}</li>`).join('');
+  return `<b>${esc(p.n)}</b><span class="k">${esc(p.c)} · ${esc(area(p.a))}</span>`+
+    `<div class="n">${n}번 다녀옴${n>1?` · ${y0===y1?y0+'년':y0+'–'+y1}`:` · ${ymd(vs[0][0])}`}</div>`+
+    `<ul>${recent}</ul>`+(n>3?`<span class="k">외 ${n-3}번 · 누르면 전부 보기</span>`:'');
+}
 function drawMarkers(){
-  cl.clearLayers();markers=[];
+  cl.clearLayers();labels.clearLayers();markers=[];
   shown().forEach(p=>{const n=vis(p).length;
     const m=L.circleMarker([p.lat,p.lng],{radius:5.5+Math.min(9,1.8*Math.sqrt(n)),weight:1.5,fillOpacity:.95,fillColor:kc(p.k),color:'#ffffff'});
-    m.p=p;m.on('click',()=>openPlace(p,false));markers.push(m)});
-  cl.addLayers(markers);
+    m.p=p;m.on('click',()=>openPlace(p,false));
+    m.bindTooltip(()=>tipHtml(p),{direction:'top',offset:[0,-8],className:'tip',opacity:1});
+    markers.push(m);
+    labels.addLayer(L.marker([p.lat,p.lng],{interactive:false,keyboard:false,icon:L.divIcon({className:'',iconSize:[0,0],html:`<span class="pl">${esc(p.n)}</span>`})}));
+  });
+  cl.addLayers(markers);showLabels();
 }
+function showLabels(){map.getZoom()>=LABEL_Z?labels.addTo(map):labels.remove()}
+map.on('zoomend',showLabels);
 function paint(){markers.forEach(m=>m.setStyle({fillColor:kc(m.p.k)}));if(selM)selM.setStyle({color:css('--fg')})}
 function highlight(p){
   if(selM){map.removeLayer(selM);selM=null}
