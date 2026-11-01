@@ -71,6 +71,15 @@ button,input,select{font:inherit;color:inherit}
 .memo .pn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .memo .tt{color:var(--mut);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dot{width:9px;height:9px;border-radius:50%;flex:none;display:inline-block}
+.dot.hollow{background:transparent!important;box-shadow:inset 0 0 0 2px var(--k)}
+.clu.rec span{background:var(--panel);color:var(--fg);border:2px dashed var(--line-strong);box-shadow:none}
+.tip .tag{display:inline-block;background:var(--chip);color:var(--mut);border-radius:6px;padding:1px 6px;font-size:10.5px;margin-bottom:3px}
+.tip .why{margin:4px 0 2px;font-size:11.5px;color:var(--mut)}
+.tip .desc{margin:3px 0 0;font-size:12px}
+.pl.rec{font-weight:500;color:var(--mut)}
+.det img{width:100%;border-radius:12px;margin:10px 0 2px;max-height:220px;object-fit:cover;display:block}
+.views button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.lead{font-size:12.5px;color:var(--mut);margin:8px 0 6px;line-height:1.5}
 .search{width:100%;padding:8px 11px;border:1px solid var(--faint);border-radius:9px;background:var(--panel);font-size:16px;margin-top:10px}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px}
 .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--faint);background:var(--chip);border-radius:999px;padding:4px 10px 4px 8px;font-size:12px;cursor:pointer}
@@ -187,6 +196,7 @@ button,input,select{font:inherit;color:inherit}
         <button role="tab" data-tab="today" aria-selected="true">오늘의 추억</button>
         <button role="tab" data-tab="places" aria-selected="false">장소</button>
         <button role="tab" data-tab="years" aria-selected="false">연도</button>
+        <button role="tab" data-tab="recs" aria-selected="false">가볼 곳</button>
       </div>
       <div class="yr"><select id="year" aria-label="연도 고르기"><option value="">모든 해</option></select><button class="clear" id="yclear" type="button" hidden>전체 보기</button></div>
     </header>
@@ -194,7 +204,7 @@ button,input,select{font:inherit;color:inherit}
   </aside>
   <div id="mapwrap">
     <div id="map" role="region" aria-label="지도"></div>
-    <div class="views"><button id="v-jj" type="button">전주</button><button id="v-kr" type="button">전국</button><button id="v-jp" type="button">일본</button></div>
+    <div class="views"><button id="v-jj" type="button">전주</button><button id="v-kr" type="button">전국</button><button id="v-jp" type="button">일본</button><button id="v-rec" type="button" aria-pressed="false">가볼 곳</button></div>
   </div>
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -247,9 +257,13 @@ const WD='일월화수목금토';
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const kc=k=>css(KV[k]||'--k-stay');
-const st={tab:'today',yr:'',off:new Set(),q:'',sel:null};
-try{const t=localStorage.getItem('chueok.tab');if(t)st.tab=t}catch(e){}
+const st={tab:'today',yr:'',off:new Set(),q:'',sel:null,recs:false};
+try{const t=localStorage.getItem('chueok.tab');if(t)st.tab=t;st.recs=!!localStorage.getItem('chueok.recs')}catch(e){}
 P.forEach((p,i)=>{p.i=i});
+const R=(data.recs||[]).map((r,i)=>Object.assign(r,{i,rec:true}));   // 가볼 곳(아직 안 가 본 추천), 점수순
+if(!R.length){st.recs=false;if(st.tab==='recs')st.tab='today';$('[data-tab="recs"]').hidden=true;$('#v-rec').hidden=true}
+const REGS=[...new Set(R.map(r=>r.reg))].sort((a,b)=>R.filter(r=>r.reg===b).length-R.filter(r=>r.reg===a).length);
+const fmtN=n=>n>=1000?(n/1000).toFixed(1).replace('.0','')+'천':String(n);
 const years=[...new Set(P.flatMap(p=>p.v.map(v=>v[0].slice(0,4))))].sort();
 const vis=p=>st.yr?p.v.filter(v=>v[0].startsWith(st.yr)):p.v;
 const shown=()=>P.filter(p=>!st.off.has(p.k)&&vis(p).length);
@@ -264,6 +278,9 @@ const cl=L.markerClusterGroup({maxClusterRadius:36,showCoverageOnHover:false,spi
   iconCreateFunction:c=>L.divIcon({html:`<span>${c.getChildCount()}</span>`,className:'clu',iconSize:[34,34]})}).addTo(map);
 let markers=[],selM=null;
 const labels=L.layerGroup();
+const rcl=L.markerClusterGroup({maxClusterRadius:36,showCoverageOnHover:false,spiderfyDistanceMultiplier:1.4,disableClusteringAtZoom:LABEL_Z,
+  iconCreateFunction:c=>L.divIcon({html:`<span>${c.getChildCount()}</span>`,className:'clu rec',iconSize:[34,34]})}).addTo(map);
+let rmarkers=[];const rlabels=L.layerGroup();
 const ymd=d=>d.replace(/-/g,'.');
 function tipHtml(p){
   const vs=vis(p),n=vs.length,y0=vs[0][0].slice(0,4),y1=vs[n-1][0].slice(0,4);
@@ -283,9 +300,26 @@ function drawMarkers(){
   });
   cl.addLayers(markers);showLabels();
 }
-function showLabels(){map.getZoom()>=LABEL_Z?labels.addTo(map):labels.remove()}
+function recTip(r){
+  return `<span class="tag">가볼 곳 · 아직 안 가 봄</span><b>${esc(r.n)}</b><span class="k">${esc(r.c)} · ${esc(area(r.a))}</span>`+
+    `<div class="why">${esc(r.why)}</div>`+(r.desc?`<p class="desc">${esc(r.desc)}</p>`:'')+`<span class="k">누르면 자세히</span>`;
+}
+function drawRecs(){   // 가볼 곳: 점선 테두리의 속 빈 핀
+  rcl.clearLayers();rlabels.clearLayers();rmarkers=[];
+  if(st.recs)R.filter(r=>!st.off.has(r.k)).forEach(r=>{
+    const m=L.circleMarker([r.lat,r.lng],{radius:7,weight:2,dashArray:'3 2',fillOpacity:.9,fillColor:css('--panel'),color:kc(r.k)});
+    m.r=r;m.on('click',()=>openRec(r,false));
+    m.bindTooltip(()=>recTip(r),{direction:'top',offset:[0,-8],className:'tip',opacity:1});
+    rmarkers.push(m);
+    rlabels.addLayer(L.marker([r.lat,r.lng],{interactive:false,keyboard:false,icon:L.divIcon({className:'',iconSize:[0,0],html:`<span class="pl rec">${esc(r.n)}</span>`})}));
+  });
+  rcl.addLayers(rmarkers);showLabels();
+}
+function showLabels(){const z=map.getZoom()>=LABEL_Z;z?labels.addTo(map):labels.remove();z&&st.recs?rlabels.addTo(map):rlabels.remove()}
 map.on('zoomend',showLabels);
-function paint(){markers.forEach(m=>m.setStyle({fillColor:kc(m.p.k)}));if(selM)selM.setStyle({color:css('--fg')})}
+function paint(){markers.forEach(m=>m.setStyle({fillColor:kc(m.p.k)}));rmarkers.forEach(m=>m.setStyle({color:kc(m.r.k),fillColor:css('--panel')}));if(selM)selM.setStyle({color:css('--fg')})}
+function setRecs(v){st.recs=v;$('#v-rec').setAttribute('aria-pressed',String(v));try{localStorage.setItem('chueok.recs',v?'1':'')}catch(e){};drawRecs()}
+$('#v-rec').onclick=()=>{setRecs(!st.recs);if(st.tab==='recs'&&!st.sel)render()};
 function highlight(p){
   if(selM){map.removeLayer(selM);selM=null}
   if(p)selM=L.circleMarker([p.lat,p.lng],{radius:16,weight:2.5,fill:false,color:css('--fg'),interactive:false}).addTo(map);
@@ -299,13 +333,13 @@ if(!P.some(p=>p.k==='일본 여행'))$('#v-jp').hidden=true;
 const body=$('#body');
 function stat(){
   const s=shown(),n=s.reduce((a,p)=>a+vis(p).length,0);
-  $('#stat').textContent=`${s.length.toLocaleString()}곳 · ${n.toLocaleString()}번의 나들이 · `+(st.yr?`${st.yr}년`:`${years[0]}–${years[years.length-1]}`)+(data.updated?` · ${data.updated} 업데이트`:'');
+  $('#stat').textContent=`${s.length.toLocaleString()}곳 · ${n.toLocaleString()}번의 나들이 · `+(st.yr?`${st.yr}년`:`${years[0]}–${years[years.length-1]}`)+(R.length?` · 가볼 곳 ${R.length}`:'')+(data.updated?` · ${data.updated} 업데이트`:'');
 }
 function tabs(){document.querySelectorAll('.tabs button').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.tab===st.tab&&!st.sel)))}
 function render(){
   tabs();stat();$('#yclear').hidden=!st.yr;$('#year').value=st.yr;
-  if(st.sel)return renderPlace(st.sel);
-  ({today:renderToday,places:renderPlaces,years:renderYears})[st.tab]();
+  if(st.sel)return st.sel.rec?renderRec(st.sel):renderPlace(st.sel);
+  ({today:renderToday,places:renderPlaces,years:renderYears,recs:renderRecs})[st.tab]();
 }
 function memoBtn(p,v,top,bottom){
   return `<button class="memo" data-i="${p.i}"><span class="when"><b>${top}</b><small>${bottom}</small></span>`+
@@ -326,10 +360,15 @@ function renderToday(){
   }
   const recent=P.flatMap(p=>st.off.has(p.k)?[]:p.v.map(v=>({p,v}))).sort((a,b)=>b.v[0].localeCompare(a.v[0])).slice(0,8);
   h+=`<div class="sec">최근 나들이</div><div class="ago">${recent.map(x=>{const [y,m,d]=x.v[0].split('-');return memoBtn(x.p,x.v,`${+m}.${+d}`,y)}).join('')}</div>`;
+  if(R.length){   // 이번 주의 추천 셋: 주마다 바뀌고, 유형은 서로 다르게
+    const wk=Math.floor((today-new Date(Y,0,1))/6048e5),pool=R.filter(r=>!st.off.has(r.k)),picks=[],seen=new Set();
+    for(let j=0;j<pool.length&&picks.length<3;j++){const r=pool[(wk*7+j*11)%pool.length];if(!seen.has(r.k)&&!picks.includes(r)){seen.add(r.k);picks.push(r)}}
+    h+=`<div class="sec">이번 주 가볼 만한 곳 · 아직 안 가 본 곳</div><div class="rows">${picks.map(recRow).join('')}</div>`;
+  }
   body.innerHTML=h;
 }
-function chipsHtml(){
-  const cnt={};P.forEach(p=>{if(vis(p).length)cnt[p.k]=(cnt[p.k]||0)+1});
+function chipsHtml(cnt){
+  if(!cnt){cnt={};P.forEach(p=>{if(vis(p).length)cnt[p.k]=(cnt[p.k]||0)+1})}
   return `<div class="chips">${KINDS.filter(([k])=>cnt[k]).map(([k])=>`<button class="chip" data-k="${k}" aria-pressed="${!st.off.has(k)}"><i class="dot" style="background:${kc(k)}"></i>${k}<small>${cnt[k]}</small></button>`).join('')}</div>`;
 }
 function renderPlaces(){
@@ -352,6 +391,34 @@ function renderYears(){
   }
   body.innerHTML=h;
 }
+function recRow(r){
+  return `<button class="row" data-r="${r.i}"><i class="dot hollow" style="--k:${kc(r.k)}"></i><span style="min-width:0"><div class="nm">${esc(r.n)}</div><div class="sub">${esc(r.c)} · ${esc(area(r.a))}${r.kid?' · 아이와':''}</div></span><span class="ct">리뷰 <b>${fmtN(r.r)}</b></span></button>`;
+}
+function renderRecs(){
+  const q=st.q.trim().toLowerCase(),cnt={};R.forEach(r=>{cnt[r.k]=(cnt[r.k]||0)+1});
+  const list=R.filter(r=>!st.off.has(r.k)&&(!q||r.n.toLowerCase().includes(q)||r.a.toLowerCase().includes(q)||r.reg.includes(q)));
+  let h=`<p class="lead">네이버 「가볼만한곳」에서 아직 안 가 본 곳만 골라, 지금까지 자주 다닌 유형과 동네 순으로 추렸어요. 다녀와서 캘린더에 적으면 다음 업데이트 때 추억으로 옮겨져요.</p>`+
+    `<button class="chip" id="rtog" aria-pressed="${st.recs}"><i class="dot hollow" style="--k:var(--fg)"></i>지도에 표시</button>`+
+    `<input class="search" id="q" type="search" placeholder="장소나 지역 이름" value="${esc(st.q)}">`+chipsHtml(cnt);
+  REGS.forEach(g=>{const rs=list.filter(r=>r.reg===g);if(!rs.length)return;
+    h+=`<div class="sec">${esc(g)} · ${rs.length}곳</div><div class="rows">${rs.map(recRow).join('')}</div>`});
+  if(!list.length)h+=`<p class="empty">찾는 곳이 없어요. 이름 일부만 넣어 보세요.</p>`;
+  body.innerHTML=h;
+  $('#rtog').onclick=()=>{setRecs(!st.recs);$('#rtog').setAttribute('aria-pressed',String(st.recs))};
+  const qi=$('#q');qi.oninput=e=>{st.q=e.target.value;const pos=qi.selectionStart;renderRecs();const n=$('#q');n.focus();n.setSelectionRange(pos,pos)};
+}
+function renderRec(r){
+  body.innerHTML=`<div class="det"><button class="back" id="back" type="button">← 목록으로</button>`+
+    `<h2>${esc(r.n)}</h2><div class="meta"><i class="dot hollow" style="--k:${kc(r.k)}"></i> 가볼 곳 · ${esc(r.k)} · ${esc(r.c)}<br>${esc(r.a)}${r.ra?`<br>${esc(r.ra)}`:''}</div>`+
+    (r.img?`<img src="${esc(r.img)}" alt="" loading="lazy">`:'')+
+    `<div class="facts"><span>리뷰 <b>${fmtN(r.r)}</b></span>${r.kid?'<span>아이와 가기 좋음</span>':''}<span>아직 안 가 봄</span></div>`+
+    `<p class="note">${esc(r.why)}</p>`+(r.desc?`<p>${esc(r.desc)}</p>`:'')+
+    `<a class="kakao" href="${esc(r.u)}" target="_blank" rel="noopener">네이버 지도에서 보기 ↗</a>`+
+    `<p class="note">다녀오면 네이버 캘린더에 적어 주세요. 다음 업데이트 때 「가볼 곳」에서 「추억」으로 옮겨져요.</p></div>`;
+  $('#back').onclick=()=>{st.sel=null;highlight(null);render()};
+  body.scrollTop=0;
+}
+function openRec(r,fly){st.sel=r;if(!st.recs)setRecs(true);render();highlight(r);if(fly)map.setView([r.lat,r.lng],Math.max(map.getZoom(),15))}
 function renderPlace(p){
   const vs=p.v,by={};vs.forEach(v=>(by[v[0].slice(0,4)]=by[v[0].slice(0,4)]||[]).push(v));
   body.innerHTML=`<div class="det"><button class="back" id="back" type="button">← 목록으로</button>`+
@@ -366,16 +433,17 @@ function renderPlace(p){
 }
 function openPlace(p,fly){st.sel=p;render();highlight(p);if(fly)map.setView([p.lat,p.lng],Math.max(map.getZoom(),15))}
 body.addEventListener('click',e=>{
-  const t=e.target.closest('[data-i],[data-k],[data-y]');if(!t)return;
+  const t=e.target.closest('[data-i],[data-r],[data-k],[data-y]');if(!t)return;
   if(t.dataset.i!==undefined)return openPlace(P[+t.dataset.i],true);
-  if(t.dataset.k){const k=t.dataset.k;st.off.has(k)?st.off.delete(k):st.off.add(k);drawMarkers();render();return}
+  if(t.dataset.r!==undefined)return openRec(R[+t.dataset.r],true);
+  if(t.dataset.k){const k=t.dataset.k;st.off.has(k)?st.off.delete(k):st.off.add(k);drawMarkers();drawRecs();render();return}
   if(t.dataset.y){st.yr=st.yr===t.dataset.y?'':t.dataset.y;drawMarkers();render()}
 });
-document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{st.tab=b.dataset.tab;st.sel=null;highlight(null);try{localStorage.setItem('chueok.tab',st.tab)}catch(e){};render();body.scrollTop=0});
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{st.tab=b.dataset.tab;st.sel=null;highlight(null);if(st.tab==='recs'&&!st.recs)setRecs(true);try{localStorage.setItem('chueok.tab',st.tab)}catch(e){};render();body.scrollTop=0});
 const ysel=$('#year');years.slice().reverse().forEach(y=>ysel.add(new Option(y+'년',y)));
 ysel.onchange=()=>{st.yr=ysel.value;drawMarkers();render()};
 $('#yclear').onclick=()=>{st.yr='';drawMarkers();render()};
-drawMarkers();render();
+drawMarkers();setRecs(st.recs);render();
 requestAnimationFrame(()=>{map.invalidateSize();map.fitBounds(views.jj)});
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{paint();render()});
 new ResizeObserver(()=>map.invalidateSize()).observe($('#mapwrap'));
